@@ -336,7 +336,12 @@ def train(train_cfg, vlm_cfg):
         torch.mps.empty_cache()
     
     print(f"Using device: {device}")
-    use_fp16 = device.type == "cuda" and not torch.cuda.is_bf16_supported()
+    # T4 (SM 7.5) lacks native BF16 even if a framework reports emulation support.
+    # Select FP16 by GPU architecture, and BF16 on Ampere/newer hardware.
+    use_fp16 = device.type == "cuda" and (
+        torch.cuda.get_device_capability(torch.cuda.current_device())[0] < 8
+        or not torch.cuda.is_bf16_supported()
+    )
     amp_dtype = torch.float16 if use_fp16 else torch.bfloat16
     scaler = torch.amp.GradScaler("cuda", enabled=use_fp16)
     print(f"AMP dtype: {amp_dtype}; scaling: {use_fp16}")

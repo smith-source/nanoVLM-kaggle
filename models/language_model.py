@@ -268,11 +268,24 @@ class LanguageModelGroupedQueryAttention(nn.Module):
             # This additive_attn_mask shape is [B, 1, 1, T_kv]
 
         if self.sdpa and x.device.type != 'mps':
-            # During decode, no additional masking needed as [1, T_kv] is naturally causal
+            # PyTorch SDPA cannot combine an explicit attention mask with
+            # is_causal=True on all supported backends. Merge causal and
+            # key-padding masks explicitly, retaining both constraints.
+            # Decoding with T_curr < T_kv retains its original non-causal
+            # handling because its keys only contain past/current tokens.
             is_causal = (T_curr == T_kv and T_curr > 1)
+            sdpa_mask = additive_attn_mask
+            if is_causal and sdpa_mask is not None:
+                causal_mask = torch.ones(
+                    (T_curr, T_kv), dtype=torch.bool, device=q.device
+                ).tril()
+                sdpa_mask = sdpa_mask.masked_fill(
+                    ~causal_mask[None, None, :, :], torch.finfo(q.dtype).min
+                )
+                is_causal = False
             y = torch.nn.functional.scaled_dot_product_attention(
                 q, k_exp, v_exp,
-                attn_mask=additive_attn_mask, 
+                attn_mask=sdpa_mask,
                 dropout_p=self.dropout if self.training else 0.0,
                 is_causal=is_causal
             )

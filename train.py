@@ -273,6 +273,9 @@ def train(train_cfg, vlm_cfg):
             print("All workers have gotten dataloaders.")
 
     run_name = get_run_name(train_cfg, vlm_cfg)
+    if is_master():
+        print(f"W&B logging: {'enabled' if train_cfg.log_wandb else 'disabled'}"
+              f"{' | entity=' + train_cfg.wandb_entity + ' | project=nanoVLM' if train_cfg.log_wandb else ''}", flush=True)
     if train_cfg.log_wandb and is_master():
         run = wandb.init(
             entity=train_cfg.wandb_entity,
@@ -652,7 +655,8 @@ def main():
     parser.add_argument('--lr_language_backbone', type=float, help='Learning rate for the language backbone')
     parser.add_argument('--vlm_checkpoint_path', type=str, help='Path to the VLM checkpoint for loading or saving')
     parser.add_argument('--compile', type=bool, help='Use torch.compile to optimize the model')
-    parser.add_argument('--log_wandb', type=bool, help='Log to wandb')
+    parser.add_argument('--log_wandb', action='store_true', help='Enable W&B logging')
+    parser.add_argument('--wandb_entity', type=str, help='W&B account or team entity')
     parser.add_argument('--resume_from_vlm_checkpoint', type=bool, default=False, help='Resume training from VLM checkpoint specified by vlm_checkpoint_path (or default if not provided)')
     parser.add_argument('--no_log_wandb', action='store_true', help='Do not log to wandb')
     parser.add_argument('--train_dataset_path', type=str, help='Train dataset path')
@@ -676,8 +680,12 @@ def main():
         vlm_cfg.vlm_checkpoint_path = args.vlm_checkpoint_path
     if args.compile is not None:
         train_cfg.compile = args.compile
-    if args.no_log_wandb is True:
+    if args.log_wandb:
+        train_cfg.log_wandb = True
+    if args.no_log_wandb:
         train_cfg.log_wandb = False
+    if args.wandb_entity is not None:
+        train_cfg.wandb_entity = args.wandb_entity
     if args.train_dataset_path is not None:
         train_cfg.train_dataset_path = args.train_dataset_path
     if args.relevance_min_rating is not None:
